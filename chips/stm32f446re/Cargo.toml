@@ -1,0 +1,8 @@
+[package]
+name = "stm32f446re"
+version = "0.1.0"
+authors = ["Rajiv Ranganath <rajiv.ranganath@atihita.com>"]
+
+[dependencies]
+cortexm4 = { path = "../../arch/cortex-m4" }
+kernel = { path = "../../kernel" }
