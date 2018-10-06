@@ -12,6 +12,7 @@
 #![warn(unreachable_pub)]
 #![no_std]
 
+extern crate cortexmnvic;
 extern crate tock_cells;
 extern crate tock_registers;
 

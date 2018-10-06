@@ -199,11 +199,15 @@ impl Kernel {
         unsafe {
             static mut IRQ_10_PEND_ONCE: bool = false;
 
+            static mut IRQ_10_PEND_TWICE: bool = false;
+
             // Test pending behavior - For example for IRQ 10
             let irq_10 = cortexmnvic::nvic::Nvic::new(10);
 
-            // Helps to observe IRQ_10_PEND_ONCE value from GDB
+            // Helps IRQ_10_PEND_{ONCE, TWICE} values from GDB
             ptr::write_volatile(&mut IRQ_10_PEND_ONCE as *mut bool, false);
+
+            ptr::write_volatile(&mut IRQ_10_PEND_TWICE as *mut bool, false);
 
             // Main kernel loop
             loop {
@@ -238,22 +242,39 @@ impl Kernel {
                     }
                 }
 
-                // PRIMASK is enabled and disabled within chip.atomic closure
-                // Pend IRQ_10 only once
+                // PRIMASK is enabled and disabled within `chip.atomic` closure
+                // Pend IRQ_10 twice
                 chip.atomic(|| {
-                    if !ptr::read_volatile(&IRQ_10_PEND_ONCE as *const bool) {
+                    // First time
+                    if !ptr::read_volatile(&IRQ_10_PEND_ONCE as *const bool)
+                        && !ptr::read_volatile(&IRQ_10_PEND_TWICE as *const bool)
+                    {
                         // Set IRQ 10 as pending. As soon as PRIMASK is
-                        // disabled, upon exiting the closure, `generic_isr`
+                        // re-enabled, upon exiting the closure, `generic_isr`
                         // should be called provided IRQ 10 is enabled
                         // NVIC.ICER, which it would be for the first time.
                         irq_10.set_pending();
 
                         ptr::write_volatile(&mut IRQ_10_PEND_ONCE as *mut bool, true);
                     }
+
+                    // Second time (Ensure that `generic_isr` has cleared the
+                    // pending status)
+                    if !irq_10.get_pending() {
+                        if ptr::read_volatile(&IRQ_10_PEND_ONCE as *const bool)
+                            && !ptr::read_volatile(&IRQ_10_PEND_TWICE as *const bool)
+                        {
+                            // Set IRQ 10 as pending. As soon as PRIMASK is
+                            // disabled, upon exiting the closure, `generic_isr`
+                            // will *not* be called as NVIC.ICER has been
+                            // disabled by `generic_isr`.
+                            irq_10.set_pending();
+
+                            ptr::write_volatile(&mut IRQ_10_PEND_TWICE as *mut bool, true);
+                        }
+                    }
                 });
 
-                // We should enter generic_isr here, which will deactivate IRQ
-                // 10 and also clear the pending state for IRQ 10.
                 asm!("nop" :::: "volatile");
 
                 let tmp = irq_10.get_pending();
